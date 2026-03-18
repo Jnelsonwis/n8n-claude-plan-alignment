@@ -1,4 +1,4 @@
-# N8N Claude Code Plan Alignment Checker - (Guardrails for your developement) (Works with Claude Code Pro, Max or API Subscriptions) 
+# Validate Development Plans Against Your Codebase Using Claude Code and n8n
 The result catches mismatches between what a plan *describes* and what the codebase *actually has* before any code is written.
 Don't even have to leave your Claude Code session!
 An n8n workflow that will use **Claude Code subscription** (running headlessly via [Supergateway](https://github.com/supercorp-ai/supergateway)) to validate a development plan against your actual codebase before you start coding.
