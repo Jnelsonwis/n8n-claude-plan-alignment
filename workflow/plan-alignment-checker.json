@@ -152,6 +152,54 @@
       ],
       "id": "e87d280a-3acf-47ef-a1a8-da8457e34227",
       "name": "Send Gotify"
+    },
+    {
+      "parameters": {
+        "content": "## Setup Checklist\n\nBefore activating, replace every `YOUR_*` placeholder:\n\n- `YOUR_MCP_SERVER` \u2014 URL of your MCP filesystem server\n- `YOUR_CF_ACCESS_CLIENT_ID` / `YOUR_CF_ACCESS_CLIENT_SECRET` \u2014 Cloudflare Access tokens (remove headers if not using CF)\n- `YOUR_PROJECT` \u2014 your project directory name under `/opt/stacks/`\n- `YOUR_USER` \u2014 Linux user that owns the project and has Claude Code authenticated\n- `YOUR_GOTIFY_SERVER` / `YOUR_GOTIFY_APP_TOKEN` \u2014 Gotify instance (or remove Gotify nodes entirely)\n- `Your/Timezone` \u2014 IANA timezone, e.g. `America/New_York`\n\n\ud83d\udcd6 Full setup guide: [README](https://github.com/Jnelsonwis/n8n-claude-plan-alignment)",
+        "height": 300,
+        "width": 460,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -640
+      ],
+      "id": "sticky-setup",
+      "name": "Setup Checklist"
+    },
+    {
+      "parameters": {
+        "content": "## Customize This Prompt\n\nThe `prompt` variable inside this node is the heart of the workflow. The default uses a generic 5-phase template:\n\n1. **Schema & Data** \u2014 check DB tables/columns exist\n2. **API & Routing** \u2014 verify endpoints are defined\n3. **Business Logic Invariants** \u2014 flag BLOCKED BY DESIGN / PROTECTED\n4. **Dependencies & Placement** \u2014 check file dirs and packages\n5. **Cross-Cutting** \u2014 env vars, infrastructure changes\n\nReplace `[YOUR_SCHEMA_FILE]`, `[YOUR_ROUTES_DIR]`, etc. with your actual paths.\n\n\ud83d\udcd6 Stack examples (TypeScript, Django, Rails, Go, Next.js):\n`examples/run-claude-prompt-node-example.md`",
+        "height": 290,
+        "width": 400,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        600,
+        -640
+      ],
+      "id": "sticky-prompt",
+      "name": "Customize the Prompt"
+    },
+    {
+      "parameters": {
+        "content": "## Gotify is Optional\n\nThese two nodes send a severity-graded push notification:\n\n- \u2705 All Clear (priority 1)\n- \ud83d\udccb Warnings Only (priority 3)\n- \u26a0\ufe0f Issues Found (priority 5)\n- \ud83d\udea8 CRITICAL (priority 8)\n\n**To remove notifications:**\n1. Delete **Build Gotify Message** and **Send Gotify**\n2. Connect **Run Claude Code** \u2192 **Format Report** directly\n\nThe webhook response still returns the full report.",
+        "height": 250,
+        "width": 360,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        -580
+      ],
+      "id": "sticky-gotify",
+      "name": "Gotify is Optional"
     }
   ],
   "connections": {
