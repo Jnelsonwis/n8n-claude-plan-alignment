@@ -1,6 +1,6 @@
-# n8n Claude Plan Alignment Checker
+# N8N Claude Plan Alignment Checker - (Guardrails for your developement)
 
-An n8n workflow that uses **Claude Code** (running headlessly via [Supergateway](https://github.com/supercorp-ai/supergateway)) to validate a development plan against your actual codebase before you start coding.
+An n8n workflow that uses **Claude Code subscription** (running headlessly via [Supergateway](https://github.com/supercorp-ai/supergateway)) to validate a development plan against your actual codebase before you start coding.
 
 Send a plan document to a webhook — get back a structured markdown report identifying what aligns, what conflicts, what's missing, and whether any infrastructure changes are needed.
 
