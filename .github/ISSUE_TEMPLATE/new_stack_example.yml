@@ -1,0 +1,40 @@
+name: New Stack Example
+description: Propose a prompt for a framework not yet covered
+labels: ["enhancement", "stack-example"]
+body:
+  - type: input
+    id: stack
+    attributes:
+      label: Stack
+      placeholder: "e.g. Laravel + Eloquent + Sanctum"
+    validations:
+      required: true
+
+  - type: textarea
+    id: prompt
+    attributes:
+      label: Proposed prompt
+      description: Paste your prompt as it would appear in the `prompt` variable in the Run Claude Code node. Use \\n for newlines.
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: allowed_tools
+    attributes:
+      label: --allowed-tools value
+      placeholder: 'e.g. "Read Bash(grep:*) Bash(cat:composer.json)"'
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: tested
+    attributes:
+      label: Checklist
+      options:
+        - label: I tested this prompt directly with `claude --print` on a real project
+          required: true
+        - label: The prompt produces all standard output sections (Aligned, Warnings, Misaligned, Missing from Plan, New Infrastructure)
+          required: true
+        - label: No personal paths, hostnames, or credentials are in the prompt
+          required: true

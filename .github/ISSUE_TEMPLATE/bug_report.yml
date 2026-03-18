@@ -1,0 +1,61 @@
+name: Bug Report
+description: Something isn't working in the workflow
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, check that your `claude --print` command works directly on the server (SSH in and run it manually). This isolates prompt issues from n8n wiring issues.
+
+  - type: dropdown
+    id: node
+    attributes:
+      label: Which node is failing?
+      options:
+        - Write Plan to Server
+        - Run Claude Code (SSE connection)
+        - Run Claude Code (prompt/output)
+        - Build Gotify Message
+        - Send Gotify
+        - Format Report
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: n8n_version
+    attributes:
+      label: n8n version
+      placeholder: "e.g. 1.45.0"
+    validations:
+      required: true
+
+  - type: input
+    id: claude_model
+    attributes:
+      label: Claude model
+      placeholder: "e.g. sonnet, opus"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug. Include any error messages from the node output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: raw_output
+    attributes:
+      label: Raw output from the failing node
+      description: Paste the JSON output from the node. Redact any sensitive paths or hostnames.
+      render: json
