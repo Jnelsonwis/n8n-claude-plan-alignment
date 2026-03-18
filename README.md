@@ -1,8 +1,9 @@
-# N8N Claude Plan Alignment Checker - (Guardrails for your developement)
+# N8N Claude Code Plan Alignment Checker - (Guardrails for your developement) (Works with Claude Code Pro, Max or API Subscriptions) 
+The result catches mismatches between what a plan *describes* and what the codebase *actually has* before any code is written.
+Don't even have to leave your Claude Code session!
+An n8n workflow that will use **Claude Code subscription** (running headlessly via [Supergateway](https://github.com/supercorp-ai/supergateway)) to validate a development plan against your actual codebase before you start coding.
 
-An n8n workflow that uses **Claude Code subscription** (running headlessly via [Supergateway](https://github.com/supercorp-ai/supergateway)) to validate a development plan against your actual codebase before you start coding.
-
-Send a plan document to a webhook — get back a structured markdown report identifying what aligns, what conflicts, what's missing, and whether any infrastructure changes are needed.
+Send a plan document to a webhook inside Claude Code chat — get back a structured markdown report identifying what aligns, what conflicts, what's missing, and whether any infrastructure changes are needed.
 
 > **Usage & Policy Note:** This workflow uses `claude --print` (Claude Code's official headless mode), which is designed for non-interactive, scripted use. Claude Code with `--print` is a supported pattern for developer automation. It uses Claude subscription, which Anthropic covers for Claude Code usage — this is fine for personal dev workflows. If you're scaling this up or embedding it in a product serving other users, switch to the [Claude API](https://docs.anthropic.com/en/api) instead.
 
@@ -54,7 +55,10 @@ POST /webhook/plan-check
 ┌──────────┐  ┌──────────────┐
 │  Gotify  │  │ Format Report │
 │  Notify  │  │  (webhook     │
-│ (async)  │  │   response)   │
+│ (async)  │  │   response)   |
+|          |  | Back to your  |
+|          |  |    current    |
+|          |  |Claude Session !| 
 └──────────┘  └──────────────┘
 ```
 
