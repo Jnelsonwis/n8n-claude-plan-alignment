@@ -4,6 +4,8 @@ An n8n workflow that uses **Claude Code subscription** (running headlessly via [
 
 Send a plan document to a webhook — get back a structured markdown report identifying what aligns, what conflicts, what's missing, and whether any infrastructure changes are needed.
 
+> **Usage & Policy Note:** This workflow uses `claude --print` (Claude Code's official headless mode), which is designed for non-interactive, scripted use. Claude Code with `--print` is a supported pattern for developer automation. It uses Claude Max, which Anthropic covers for Claude Code usage — this is fine for personal dev workflows. If you're scaling this up or embedding it in a product serving other users, switch to the [Claude API](https://docs.anthropic.com/en/api) instead.
+
 ---
 
 ## What This Does
