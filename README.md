@@ -90,6 +90,12 @@ POST /webhook/plan-check
 
 Claude Code runs as a CLI on your server. Supergateway wraps it in an HTTP+SSE server so n8n can invoke it remotely. The `Run Claude Code` node opens a persistent SSE connection to Supergateway's `/sse` endpoint and sends commands via `/message`.
 
+### Why Docker-direct instead of an HTTP request to Supergateway?
+
+Claude Code takes 30–90 seconds to analyze a project. **Cloudflare tunnels have a 120-second proxy read timeout** (Enterprise-only to increase). If your n8n instance and Supergateway are behind Cloudflare, any request that takes longer than 120s will fail with a 524 error — silently from n8n's perspective.
+
+The `Run Claude Code` node bypasses this entirely by talking directly to `supergateway-filesystem:8000` on the shared Docker network via a persistent SSE connection. No Cloudflare, no proxy timeout. This is why Supergateway must be on the **same Docker network as n8n**.
+
 ---
 
 ## Setup
@@ -159,16 +165,61 @@ https://YOUR_N8N_HOST/webhook/plan-check
 
 ## How to Use
 
-Send a POST request with your plan as a string:
+### Inline plan
 
 ```bash
-curl -X POST https://YOUR_N8N_HOST/webhook/plan-check \
+curl -s -X POST http://localhost:5678/webhook/plan-check \
   -H "Content-Type: application/json" \
-  -d '{
-    "filename": "my-feature-plan",
-    "plan": "## Feature: ...\n\n### Database Changes\n..."
-  }'
+  -d '{"filename": "my-feature", "plan": "## Feature: ...\n\n### DB Changes\n..."}' \
+  | jq -r .report
 ```
+
+### From a plan file
+
+```bash
+curl -s -X POST http://localhost:5678/webhook/plan-check \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n \
+    --arg p "$(cat plans/my-feature.md)" \
+    --arg n "$(basename plans/my-feature.md .md)" \
+    '{plan: $p, filename: $n}')" \
+  | jq -r .report
+```
+
+### Shell alias (add to `~/.bashrc` or `~/.zshrc`)
+
+```bash
+plancheck() {
+  local file="${1:?Usage: plancheck <plan.md>}"
+  curl -s -X POST http://localhost:5678/webhook/plan-check \
+    -H "Content-Type: application/json" \
+    -d "$(jq -n \
+      --arg p "$(cat "$file")" \
+      --arg n "$(basename "$file" .md)" \
+      '{plan: $p, filename: $n}')" \
+    | jq -r .report
+}
+```
+
+Then just: `plancheck plans/my-feature.md`
+
+### From inside Claude Code
+
+```
+Read plans/my-feature.md and POST it to http://localhost:5678/webhook/plan-check
+as JSON {"plan": "<content>", "filename": "my-feature"}, then display the report.
+```
+
+### Via external URL
+
+```bash
+curl -s -X POST https://YOUR_N8N_HOST/webhook/plan-check \
+  -H "Content-Type: application/json" \
+  -d '{"filename": "my-feature", "plan": "..."}' \
+  | jq -r .report
+```
+
+> **Note:** If your n8n is behind Cloudflare, use `localhost` for plans that take >90s to analyze. See [Why Docker-direct](#why-docker-direct-instead-of-an-http-request-to-supergateway) above.
 
 The response is a `text/markdown` document containing the full alignment report.
 
@@ -243,6 +294,39 @@ Read .tmp-plan-check.md → analyze against:
 
 ---
 
+## Troubleshooting
+
+**524 timeout / "Workflow execution failed" from external URL**
+Cloudflare's proxy read timeout is 120s. Claude Code analysis often takes longer. Use `localhost:5678` directly, or ensure Supergateway is on the same Docker network as n8n so the `Run Claude Code` node bypasses Cloudflare entirely.
+
+**"No sessionId" / SSE connection never starts**
+The `supergateway-filesystem` container is down or not on the right Docker network. Check:
+```bash
+docker ps | grep supergateway
+docker network inspect YOUR_NETWORK --format '{{range .Containers}}{{.Name}} {{end}}' | grep supergateway
+```
+
+**Claude Code auth errors**
+The auth token has expired. Re-authenticate on the server:
+```bash
+su - YOUR_USER -c 'claude auth login'
+```
+
+**Empty report or "No result found"**
+Claude Code timed out (>170s). The plan may be too large for the current `--max-turns` setting. Test with a shorter plan to confirm the pipeline is working, then increase `--max-turns` in the Run Claude Code node.
+
+**Claude Code binary not found after VS Code update**
+The VS Code extension auto-updates and moves the binary. The command in the Run Claude Code node uses a glob to find the latest binary automatically:
+```bash
+ls -d /home/YOUR_USER/.vscode-server/extensions/anthropic.claude-code-*-linux-x64/resources/native-binary/claude | sort -V | tail -1
+```
+If Claude Code stops responding after an extension update, verify the path resolves:
+```bash
+su - YOUR_USER -c 'ls ~/.vscode-server/extensions/anthropic.claude-code-*/resources/native-binary/claude'
+```
+
+---
+
 ## Removing Gotify (Notification-Free Mode)
 
 If you don't want push notifications:
@@ -250,6 +334,19 @@ If you don't want push notifications:
 1. Delete the **Build Gotify Message** and **Send Gotify** nodes
 2. Connect **Run Claude Code** directly to **Format Report**
 3. The webhook response still returns the full report
+
+---
+
+## Future Enhancements
+
+Ideas that have come up in production use — good starting points for contributors:
+
+- **Save reports to disk** — Add nodes after Format Report to write the report to a `docs/alignment-reports/` directory and clean up `.tmp-plan-check.md`
+- **Auto-gate before execution** — Trigger plancheck automatically before Claude Code begins executing any plan; block on CRITICAL results
+- **Schema snapshot validation** — Add your ORM's migration snapshot (e.g. `drizzle/meta/_journal.json`) as context to catch drift between the schema file and what's actually been migrated
+- **Frontend component validation** — Extend the prompt to grep `src/components/` and `src/pages/` so UI references in the plan are validated against real component files
+- **Multi-project support** — Accept a `project` field in the request body and route to different project directories and prompts based on it
+- **GitHub Actions trigger** — Fire plancheck on PR creation using a GitHub webhook into n8n, post results as a PR comment
 
 ---
 

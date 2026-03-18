@@ -226,5 +226,8 @@
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "YOUR_N8N_INSTANCE_ID"
+  },
+  "settings": {
+    "executionOrder": "v1"
   }
 }
