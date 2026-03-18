@@ -1,0 +1,230 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "plan-check",
+        "responseMode": "lastNode",
+        "options": {
+          "responseContentType": "text/markdown; charset=utf-8"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        -288
+      ],
+      "id": "86c0383a-4033-4978-aa7b-9386969998cc",
+      "name": "Webhook",
+      "webhookId": "plan-check"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse input and build the MCP write_file payload\nconst body = $input.first().json.body;\nconst planText = body?.plan || (typeof body === 'string' ? body : JSON.stringify(body));\nconst filename = body?.filename || 'unnamed-plan';\nconst timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);\n\n// Build MCP JSON-RPC payload for write_file\nconst mcpPayload = {\n  jsonrpc: \"2.0\",\n  id: 1,\n  method: \"tools/call\",\n  params: {\n    name: \"write_file\",\n    arguments: {\n      path: \"/host/opt/stacks/YOUR_PROJECT/.tmp-plan-check.md\",\n      content: planText\n    }\n  }\n};\n\nreturn [{ json: { mcpPayload, planText, filename, timestamp } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        -288
+      ],
+      "id": "b7b7fa18-e167-4e49-bcbb-b43bf49b0353",
+      "name": "Parse Input"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_MCP_SERVER/mcp",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json, text/event-stream"
+            },
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "YOUR_CF_ACCESS_CLIENT_ID"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "YOUR_CF_ACCESS_CLIENT_SECRET"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.mcpPayload) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        432,
+        -288
+      ],
+      "id": "7fcca1c1-c2e1-40f5-a329-14e6433e7a76",
+      "name": "Write Plan to Server"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Call MCP via supergateway Docker network - keep SSE stream open for result\nconst http = require('http');\n\nfunction postMsg(sessionId, body) {\n  return new Promise((resolve, reject) => {\n    const req = http.request({\n      hostname: 'supergateway-filesystem', port: 8000,\n      path: `/message?sessionId=${sessionId}`,\n      method: 'POST',\n      headers: { 'Content-Type': 'application/json' }\n    }, (res) => {\n      let data = '';\n      res.on('data', c => data += c);\n      res.on('end', () => resolve(data));\n    });\n    req.on('error', reject);\n    req.setTimeout(10000, () => { req.destroy(); });\n    if (body) req.write(typeof body === 'string' ? body : JSON.stringify(body));\n    req.end();\n  });\n}\n\n// Open persistent SSE connection and collect ALL events\nconst sseData = await new Promise((resolve, reject) => {\n  let collected = '';\n  let sessionId = null;\n  let commandSent = false;\n  let resultReceived = false;\n\n  const req = http.request({\n    hostname: 'supergateway-filesystem', port: 8000,\n    path: '/sse', method: 'GET',\n    headers: { 'Accept': 'text/event-stream' }\n  }, (res) => {\n    // Set a generous overall timeout\n    const overallTimer = setTimeout(() => {\n      req.destroy();\n      resolve({ collected, sessionId, timedOut: true });\n    }, 175000);\n\n    res.on('data', async (chunk) => {\n      collected += chunk.toString();\n\n      // Step 1: Extract sessionId from the endpoint event\n      if (!sessionId) {\n        const match = collected.match(/sessionId=([a-f0-9-]+)/);\n        if (match) {\n          sessionId = match[1];\n\n          // Step 2: Initialize MCP session\n          try {\n            await postMsg(sessionId, {\n              jsonrpc: '2.0', id: 0, method: 'initialize',\n              params: { protocolVersion: '2025-11-25', capabilities: {},\n                clientInfo: { name: 'n8n', version: '1.0' } }\n            });\n            await new Promise(r => setTimeout(r, 500));\n            await postMsg(sessionId, { jsonrpc: '2.0', method: 'notifications/initialized' });\n            await new Promise(r => setTimeout(r, 300));\n          } catch (e) { /* init errors are ok */ }\n        }\n      }\n\n      // Step 3: After init response arrives, send the Claude Code command\n      if (sessionId && !commandSent && collected.includes('\"id\":0') && collected.includes('\"result\"')) {\n        commandSent = true;\n\n        // -----------------------------------------------------------------------\n        // CUSTOMIZE THIS PROMPT to match your project's architecture.\n        // The example below checks a TypeScript/Drizzle/Better Auth/Expo stack.\n        // Adapt the file paths, frameworks, and validation rules for your project.\n        // -----------------------------------------------------------------------\n        const prompt = 'Read .tmp-plan-check.md which is a development plan to validate against this codebase. Analyze it:\\\\n1. Read src/db/schema.ts - check every table/column the plan mentions exists. Flag new migrations needed.\\\\n2. Grep src/routes/*.ts for endpoints. Verify API routes the plan mentions exist.\\\\n3. Read src/lib/auth.ts - check plan respects auth hooks and session config.\\\\n4. Verify new files go in correct dirs.\\\\n5. MOBILE CONFIG PROTECTION: Read app.json and/or app.config.ts if they exist - record the current mobile bundle IDs, scheme, splash, icons, permissions, and plugin configs. Check if the plan touches any files that affect Expo/React Native mobile config (app.json, app.config.ts, eas.json, babel.config.js, metro.config.js, package.json expo field, native/ or ios/ or android/ dirs). If so, flag MOBILE_INTERFERENCE: list every mobile config key/value that must be preserved unchanged and confirm the plan does not alter them. If the plan adds packages, check they have no native modules that require a new EAS build.\\\\nOutput markdown sections: Aligned, Warnings, Misaligned (plan says vs exists vs fix), Missing from Plan, New Infrastructure, MOBILE CONFIG STATUS (Safe / Needs Review - list every affected mobile config key). Be precise.';\n\n        const cmd = `su - YOUR_USER -c 'CLAUDE_BIN=$(ls -d /home/YOUR_USER/.vscode-server/extensions/anthropic.claude-code-*-linux-x64/resources/native-binary/claude 2>/dev/null | sort -V | tail -1) && cd /opt/stacks/YOUR_PROJECT && $CLAUDE_BIN --print \"${prompt}\" --model sonnet --output-format text --max-turns 15 --allowed-tools \"Read Bash(grep:*) Bash(cat:app.json) Bash(cat:app.config.ts) Bash(cat:eas.json) Bash(cat:babel.config.js) Bash(cat:metro.config.js)\" 2>&1'`;\n\n        try {\n          await postMsg(sessionId, {\n            jsonrpc: '2.0', id: 2,\n            method: 'tools/call',\n            params: { name: 'execute_command', arguments: { command: cmd, timeout: 180000 } }\n          });\n        } catch (e) { /* send errors ok - response comes on SSE */ }\n      }\n\n      // Step 4: Check if we got the Claude Code result (id: 2)\n      if (commandSent && !resultReceived && collected.includes('\"id\":2') && collected.includes('\"result\"')) {\n        const lastDataIdx = collected.lastIndexOf('data: {');\n        if (lastDataIdx > -1) {\n          const remainder = collected.substring(lastDataIdx);\n          if (remainder.includes('\"stdout\"') || remainder.includes('\"isError\"')) {\n            resultReceived = true;\n            clearTimeout(overallTimer);\n            req.destroy();\n            resolve({ collected, sessionId, timedOut: false });\n          }\n        }\n      }\n    });\n\n    res.on('end', () => {\n      clearTimeout(overallTimer);\n      resolve({ collected, sessionId, timedOut: false });\n    });\n  });\n\n  req.on('error', (e) => {\n    if (e.code !== 'ECONNRESET') reject(e);\n  });\n  req.end();\n});\n\n// Parse out the result from the collected SSE data\nlet resultJson = '';\nconst lines = sseData.collected.split('\\n');\nfor (let i = lines.length - 1; i >= 0; i--) {\n  if (lines[i].startsWith('data: {') && lines[i].includes('\"id\":2')) {\n    resultJson = lines[i].substring(6);\n    break;\n  }\n}\n\nreturn [{ json: {\n  result: resultJson || sseData.collected,\n  sessionId: sseData.sessionId,\n  timedOut: sseData.timedOut\n} }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        656,
+        -288
+      ],
+      "id": "46b43023-003b-4272-8817-5002db2b22ac",
+      "name": "Run Claude Code"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse response from Run Claude Code node\nconst raw = $('Run Claude Code').first().json;\nlet analysis = '';\n\ntry {\n  let resultData = raw.result || raw;\n  if (typeof resultData === 'string') {\n    try { resultData = JSON.parse(resultData); } catch {}\n  }\n  if (resultData?.result?.content?.[0]?.text) {\n    const execOutput = resultData.result.content[0].text;\n    try {\n      const parsed = JSON.parse(execOutput);\n      analysis = parsed.stdout || parsed.text || execOutput;\n    } catch { analysis = execOutput; }\n  } else if (resultData?.error) {\n    analysis = `Error: ${JSON.stringify(resultData.error)}`;\n  } else if (typeof resultData === 'string') {\n    const stdoutMatch = resultData.match(/\"stdout\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"/);\n    if (stdoutMatch) analysis = JSON.parse('\"' + stdoutMatch[1] + '\"');\n    else analysis = resultData;\n  } else {\n    analysis = JSON.stringify(resultData, null, 2);\n  }\n} catch (e) {\n  analysis = 'Error parsing: ' + e.message;\n}\n\nconst meta = $('Parse Input').first().json;\nconst now = new Date().toLocaleString('en-US', { timeZone: 'Your/Timezone' });\n\nreturn [{ json: { report: `# Plan Alignment Report\n\n**Plan:** ${meta.filename}  \n**Checked:** ${now}  \n**Engine:** Claude Code (Max) → Sonnet  \n**Project:** /opt/stacks/YOUR_PROJECT\n\n---\n\n${analysis}\n\n---\n\n*Generated by n8n Plan Alignment Workflow v1.0*\n` } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        -288
+      ],
+      "id": "44c44250-646d-4271-a22a-3f52b4edd3c1",
+      "name": "Format Report"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build Gotify notification from raw Claude Code output\nconst raw = $input.first().json;\nconst meta = $('Parse Input').first().json;\n\n// Parse the Claude Code result\nlet analysis = '';\ntry {\n  let resultData = raw.result || raw;\n  if (typeof resultData === 'string') {\n    try { resultData = JSON.parse(resultData); } catch {}\n  }\n  if (resultData?.result?.content?.[0]?.text) {\n    const execOutput = resultData.result.content[0].text;\n    try {\n      const parsed = JSON.parse(execOutput);\n      analysis = parsed.stdout || parsed.text || execOutput;\n    } catch { analysis = execOutput; }\n  } else if (typeof resultData === 'string') {\n    const stdoutMatch = resultData.match(/\"stdout\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"/);\n    if (stdoutMatch) analysis = JSON.parse('\"' + stdoutMatch[1] + '\"');\n    else analysis = resultData;\n  } else {\n    analysis = JSON.stringify(resultData, null, 2);\n  }\n} catch (e) { analysis = 'Parse error: ' + e.message; }\n\n// Count issues by scanning the analysis text\nconst countMatches = (pattern) => (analysis.match(pattern) || []).length;\nconst hasCritical = /CRITICAL|BLOCKED BY DESIGN|MOBILE_INTERFERENCE/i.test(analysis);\nconst misalignedCount = countMatches(/❌|Misaligned|Does not exist|BLOCKED/gi);\nconst warningCount = countMatches(/⚠️|Warning|already exists|duplicate|conflict/gi);\n\n// Determine severity\nlet severity, priority, emoji;\nif (hasCritical || misalignedCount > 3) {\n  severity = 'CRITICAL'; priority = 8; emoji = '🚨';\n} else if (misalignedCount > 0) {\n  severity = 'Issues Found'; priority = 5; emoji = '⚠️';\n} else if (warningCount > 0) {\n  severity = 'Warnings Only'; priority = 3; emoji = '📋';\n} else {\n  severity = 'All Clear'; priority = 1; emoji = '✅';\n}\n\n// Extract key misaligned items\nconst issueLines = analysis.split('\\n')\n  .filter(l => /^\\| \\*\\*/.test(l.trim()) || /^- ❌/.test(l.trim()) || /Does not exist/.test(l) || /BLOCKED/.test(l))\n  .map(l => l.replace(/^\\|?\\s*\\*?\\*?/, '').replace(/\\*?\\*?\\s*\\|.*$/, '').trim())\n  .filter(l => l.length > 10 && l.length < 200)\n  .slice(0, 5);\n\nconst title = `${emoji} Plan Check: ${meta.filename}`;\nconst now = new Date().toLocaleString('en-US', { timeZone: 'Your/Timezone' });\n\nlet message = `## ${severity}\\n\\n`;\nmessage += `**Plan:** \\`${meta.filename}\\`\\n`;\nmessage += `**Checked:** ${now}\\n\\n`;\n\nif (issueLines.length > 0) {\n  message += `### Key Findings\\n\\n`;\n  issueLines.forEach(item => {\n    message += `- ${item}\\n`;\n  });\n  message += '\\n';\n}\n\nif (hasCritical) {\n  const mobileConflict = /MOBILE_INTERFERENCE/i.test(analysis);\n  const authConflict = /CRITICAL|BLOCKED BY DESIGN/i.test(analysis);\n  if (authConflict) message += `\\n🔴 **Auth/Design Conflict** — Plan conflicts with protected hooks or fields\\n`;\n  if (mobileConflict) message += `\\n📱 **Mobile Config Conflict** — Plan interferes with Expo/React Native config\\n`;\n}\n\nmessage += `\\n---\\n_Full report returned in webhook response_`;\n\nreturn [{ json: { title, message, priority } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        -288
+      ],
+      "id": "1b07954f-d805-4c7c-8ad2-aa5f88bb90f3",
+      "name": "Build Gotify Message"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR_GOTIFY_SERVER/message",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Gotify-Key",
+              "value": "YOUR_GOTIFY_APP_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "YOUR_CF_ACCESS_CLIENT_ID"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "YOUR_CF_ACCESS_CLIENT_SECRET"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $json.title, message: $json.message, priority: $json.priority, extras: { \"client::display\": { contentType: \"text/markdown\" } } }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1088,
+        -288
+      ],
+      "id": "e87d280a-3acf-47ef-a1a8-da8457e34227",
+      "name": "Send Gotify"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Parse Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Input": {
+      "main": [
+        [
+          {
+            "node": "Write Plan to Server",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Plan to Server": {
+      "main": [
+        [
+          {
+            "node": "Run Claude Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Claude Code": {
+      "main": [
+        [
+          {
+            "node": "Build Gotify Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Gotify Message": {
+      "main": [
+        [
+          {
+            "node": "Send Gotify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gotify": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "YOUR_N8N_INSTANCE_ID"
+  }
+}
